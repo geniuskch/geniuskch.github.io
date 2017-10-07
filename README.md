@@ -1,2 +1,2 @@
 # geniuskch.github.io
-My profile page
+My profile page: http://geniuskch.github.io
