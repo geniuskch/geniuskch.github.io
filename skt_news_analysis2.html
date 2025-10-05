@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>뉴스 클러스터링 분석</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333; padding: 20px; min-height: 100vh;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 {
+            color: white; text-align: center; margin-bottom: 30px;
+            font-size: 2.5em; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .stats {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px; margin-bottom: 30px;
+        }
+        .stat-card {
+            background: white; padding: 20px; border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center;
+        }
+        .stat-value { font-size: 2.5em; font-weight: bold; color: #667eea; display: block; }
+        .stat-label { color: #666; margin-top: 5px; font-size: 0.9em; }
+        .chart-container {
+            background: white; padding: 30px; border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px;
+        }
+        .chart-title { font-size: 1.5em; font-weight: bold; margin-bottom: 20px; color: #333; }
+        canvas { max-height: 400px; }
+        .cluster-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px; margin-bottom: 20px;
+        }
+        .cluster-card {
+            background: white; padding: 20px; border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 5px solid #667eea;
+        }
+        .cluster-header {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;
+        }
+        .cluster-name { font-size: 1.2em; font-weight: bold; color: #667eea; }
+        .cluster-size {
+            background: #667eea; color: white; padding: 5px 12px;
+            border-radius: 20px; font-size: 0.9em;
+        }
+        .keywords { background: #f5f7fa; padding: 10px; border-radius: 8px; margin: 10px 0; }
+        .keyword-tag {
+            display: inline-block; background: #667eea; color: white;
+            padding: 4px 10px; border-radius: 12px; margin: 3px; font-size: 0.85em;
+        }
+        .accordion-item {
+            background: white; border-radius: 8px; margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); overflow: hidden;
+        }
+        .accordion-header {
+            padding: 15px 20px; display: flex; justify-content: space-between;
+            align-items: center; cursor: pointer; transition: background 0.3s;
+        }
+        .accordion-header:hover { background: #f8f9fa; }
+        .accordion-label { font-weight: bold; color: #667eea; flex: 1; }
+        .accordion-time { color: #666; font-size: 0.9em; text-align: right; }
+        .time-arrow { margin: 0 10px; color: #999; }
+        .accordion-icon {
+            margin-left: 15px; transition: transform 0.3s;
+            color: #667eea; font-size: 1.2em;
+        }
+        .accordion-icon.active { transform: rotate(180deg); }
+        .accordion-content {
+            max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out;
+        }
+        .accordion-content.active { max-height: 2000px; transition: max-height 0.5s ease-in; }
+        .news-list { padding: 10px 20px 20px 20px; background: #f8f9fa; }
+        .news-item {
+            padding: 12px; background: white; border-radius: 6px;
+            margin-bottom: 8px; border-left: 3px solid #667eea;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .news-item:hover { transform: translateX(5px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .news-title { font-weight: 500; color: #333; margin-bottom: 6px; line-height: 1.4; }
+        .news-title a { color: #333; text-decoration: none; }
+        .news-title a:hover { color: #667eea; }
+        .news-meta {
+            display: flex; justify-content: space-between; font-size: 0.85em; color: #666;
+        }
+        .news-media { font-weight: 600; color: #667eea; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 SKT 해킹 뉴스 클러스터링 분석</h1>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <span class="stat-value">354</span>
+                <div class="stat-label">총 뉴스 기사</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">6</span>
+                <div class="stat-label">주요 클러스터</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">139</span>
+                <div class="stat-label">최대 클러스터</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value">22시간</span>
+                <div class="stat-label">보도 시간대</div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart-title">📈 클러스터 크기 분포</div>
+            <canvas id="clusterSizeChart"></canvas>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart-title">⏰ 시간대별 뉴스 전파</div>
+            <canvas id="timelineChart"></canvas>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart-title">🕐 주요 클러스터 시간대 분석 (클릭하여 상세 보기)</div>
+            <div style="margin-top: 20px;" id="accordionContainer"></div>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart-title">🔍 주요 클러스터 상세</div>
+            <div class="cluster-grid" id="clusterGrid"></div>
+        </div>
+    </div>
+    
+    <script>
+        const clusterData = {
+            clusters: [
+                {
+                    name: "유심정보 유출 사고",
+                    size: 139,
+                    color: "#667eea",
+                    keywords: ["SK텔레콤", "유심정보유출", "악성코드", "개인정보보호", "해킹"],
+                    timeline: "4/22 09:18 → 23:36"
+                },
+                {
+                    name: "대규모 해킹 사고",
+                    size: 81,
+                    color: "#f093fb",
+                    keywords: ["SK텔레콤", "해킹", "개인정보유출", "유심정보유출"],
+                    timeline: "4/22 01:34 → 21:50"
+                },
+                {
+                    name: "보안 취약점 분석",
+                    size: 46,
+                    color: "#4facfe",
+                    keywords: ["유심정보유출", "해킹", "SKT", "보안사고"],
+                    timeline: "4/22 01:34 → 17:38"
+                },
+                {
+                    name: "정부 현장조사",
+                    size: 39,
+                    color: "#43e97b",
+                    keywords: ["SK텔레콤", "해킹", "개인정보유출", "비상대책반"],
+                    timeline: "4/22 00:12 → 22:39"
+                },
+                {
+                    name: "과기정통부 대응",
+                    size: 38,
+                    color: "#fa709a",
+                    keywords: ["SK텔레콤", "과기정통부", "비상대책반"],
+                    timeline: "4/22 01:41 → 19:09"
+                },
+                {
+                    name: "영상뉴스 헤드라인",
+                    size: 6,
+                    color: "#fee140",
+                    keywords: ["뉴스1번지", "헤드라인", "연합뉴스TV"],
+                    timeline: "4/22 06:03 → 13:29"
+                }
+            ]
+        };
+
+        const newsData = {
+            "유심정보 유출 사고": [
+                { title: "위클리오늘 SKT 유심 정보 유출 악성코드 삭제 및해킹의심 장비 격리", media: "위클리오늘", url: "http://www.weeklytoday.com/news/articleView.html?idxno=692254", time: "2025.04.22 10:29" },
+                { title: "SKT해킹공격으로 유심정보 유출 당국 비상대책반 구성", media: "서울신문", url: "https://www.seoul.co.kr/news/economy/industry/2025/04/22/20250422500172?wlog_tag3=naver", time: "2025.04.22 15:58" },
+                { title: "SKT 유심정보 대량 유출 악성코드 공격", media: "뉴스토마토", url: "http://www.newstomato.com/ReadNews.aspx?no=1259781&inflow=N", time: "2025.10.02" },
+                { title: "‘업계 1위’ SKT 해킹 공격으로 고객 정보 유출", media: "KBS", url: "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8234975&ref=A", time: "2025.04.22 23:36" },
+                { title: "SKT 유심 관련 정보 유출 보안 비상", media: "KBS", url: "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8234353&ref=A", time: "2025.04.22 12:45" },
+                { title: "SK텔레콤 악성코드 공격 유심정보 털려", media: "아시아에이", url: "https://www.asiaa.co.kr/news/articleView.html?idxno=210023", time: "2025.04.22 09:30" },
+                { title: "SKT 해킹 유심 고유번호 등 정보 유출", media: "스포츠동아", url: "https://sports.donga.com/it/article/all/20250422/131466310/1", time: "2025.04.22 11:27" },
+                { title: "SK텔레콤 유심정보 유출 사고 고객 불안", media: "CIO Korea", url: "https://www.cio.com/article/3966389/sk%ED%85%94%EB%A0%88%EC%BD%A4-%EC%9C%A0%EC%8B%AC-%EC%A0%95%EB%B3%B4-%EC%9C%A0%EC%B6%9C-%EC%9D%98%EC%8B%AC-%EC%82%AC%EA%B3%A0-%EB%B0%9C%ED%91%9C%C2%B7%C2%B7%C2%B7-%EA%B3%A0%EA%B0%9D-%EB%B3%B4%ED%98%B8.html", time: "" },
+                { title: "SKT 해킹으로 유심 데이터 유출 확인", media: "한국경제TV", url: "http://www.wowtv.co.kr/NewsCenter/News/Read?articleId=A202504220346&t=NN", time: "2025.04.22 10:45" },
+                { title: "SK텔레콤 유심정보 유출 전수조사 착수", media: "비즈트리뷴", url: "http://www.biztribune.co.kr/news/articleView.html?idxno=332975", time: "2025.04.22 18:14" },
+                { title: "SKT, 악성코드로 가입자 유심 정보 유출", media: "비즈워치", url: "http://news.bizwatch.co.kr/article/mobile/2025/04/22/0007", time: "2025.04.22 10:47" },
+                { title: "SK텔레콤 해킹 피해 유심정보 노출", media: "이데일리", url: "http://www.edaily.co.kr/news/newspath.asp?newsid=03280006642138744", time: "2025.04.22 15:37" },
+                { title: "SKT 유심 관련 개인정보 유출 사태", media: "KBS", url: "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8234353&ref=A", time: "2025.04.22 12:45" }
+            ],
+            "대규모 해킹 사고": [
+                { title: "최대 이동통신사 SKT해킹 이용자 유심 정보 유출", media: "YTN", url: "https://www.ytn.co.kr/_ln/0102_202504222239360665", time: "2025.04.22 22:39" },
+                { title: "고객 개인정보 털린 SKT 정부 조사 착수", media: "대구신문", url: "https://www.idaegu.co.kr/news/articleView.html?idxno=507634", time: "2025.04.22 21:50" },
+                { title: "SKT서도 대규모해킹사고 이용자 개인정보 유출 가능성에 당국 비상", media: "워크투데이", url: "http://www.worktoday.co.kr/news/articleView.html?idxno=67226", time: "2025.04.22 11:48" },
+                { title: "국내 최대 통신사 SKT 해킹 당해 2300만명 정보 유출 우려", media: "YTN", url: "https://www.ytn.co.kr/_ln/0102_202504222239360665", time: "2025.04.22 22:39" },
+                { title: "SKT 대규모 해킹 개인정보 유출 심각", media: "이코노텔링", url: "http://www.econotelling.com/news/articleView.html?idxno=16629", time: "2025.04.22 18:22" },
+                { title: "통신 1위 SKT 해킹 충격 보안 시스템 구멍", media: "아시아투데이", url: "https://www.asiatoday.co.kr/view.php?key=20250422010012693", time: "2025.04.22 09:28" },
+                { title: "SKT 역대급 해킹 사태 고객 정보 대량 유출", media: "경향신문", url: "https://www.khan.co.kr/article/202504222054005", time: "2025.04.22 20:54" },
+                { title: "SKT 해킹 공격 받아 개인정보 유출 확인", media: "뉴스저널리즘", url: "https://www.ngetnews.com/news/articleView.html?idxno=524854", time: "2025.04.22 09:32" },
+                { title: "2300만 고객 정보 위험 SKT 해킹 사고", media: "문화일보", url: "https://www.munhwa.com/article/11500697?ref=naver", time: "2025.04.22 12:01" },
+                { title: "SKT 대형 보안사고 개인정보 유출 비상", media: "이코노텔링", url: "http://www.econotelling.com/news/articleView.html?idxno=16629", time: "2025.04.22 18:22" },
+                { title: "국내 1위 통신사 SK 당해 정보 유출", media: "뉴데일리", url: "https://biz.newdaily.co.kr/site/data/html/2025/04/22/2025042200180.html", time: "2025.04.22 11:10" },
+                { title: "SKT 해킹 전국민 3분의 1 정보 유출 위기", media: "경향신문", url: "https://www.khan.co.kr/article/202504222054005", time: "2025.04.22 20:54" },
+                { title: "최대 이통사 SKT 해킹 피해 보안 허점 드러나", media: "YTN", url: "https://www.ytn.co.kr/_ln/0102_202504222239360665", time: "2025.04.22 22:39" }
+            ],
+            "보안 취약점 분석": [
+                { title: "SKT해킹에 유심 정보 유출 가능성", media: "스포츠동아", url: "https://sports.donga.com/it/article/all/20250422/131466310/1", time: "2025.04.22 11:27" },
+                { title: "SKT 유심정보 유출 보안 취약점 분석", media: "경향신문", url: "https://www.khan.co.kr/article/202504222054005", time: "2025.04.22 20:54" },
+                { title: "SKT, 해킹 공격에 고객 정보 유출…\“시스템 전수 조사\”", media: "아시아투데이", url: "https://www.asiatoday.co.kr/view.php?key=20250422010012693", time: "2025.04.22 09:28" },
+                { title: "SKT 해킹 보안 인프라 문제 지적", media: "경향신문", url: "https://www.khan.co.kr/article/202504222054005", time: "2025.04.22 20:54" },
+                { title: "해킹 당한 SKT '유심 정보' 유출됐다…KISA 전문가 현장 파견", media: "머니투데이", url: "http://news.mt.co.kr/mtview.php?no=2025042213560740952", time: "2025.04.22 14:20" },
+                { title: "SKT 해킹 사고 통신사 보안 재조명", media: "제민일보", url: "https://www.jemin.com/news/articleView.html?idxno=796729", time: "2025.04.22 13:06" },
+                { title: "SKT 보안 시스템 취약점 전면 분석", media: "아시아투데이", url: "https://www.asiatoday.co.kr/view.php?key=20250422010012693", time: "2025.04.22 09:28" },
+                { title: "전문가 SKT 해킹 예방 가능했다", media: "SBS Biz", url: "https://biz.sbs.co.kr/article_hub/20000230168?division=NAVER", time: "2025.04.22 14:39" },
+                { title: "SKT \"해킹으로 고객 유심 정보 유출 정황…보안 체계 강화\"", media: "서울이코노미뉴스", url: "http://www.seouleconews.com/news/articleView.html?idxno=83067", time: "2025.04.22 10:27" },
+                { title: "SKT 악성코드 침투 경로 확인", media: "비즈워치", url: "http://news.bizwatch.co.kr/article/mobile/2025/04/22/0007", time: "2025.04.22 10:47" },
+                { title: "SKT 보안 허점 전방위 점검 필요", media: "와이드경제", url: "https://www.widedaily.com/news/articleView.html?idxno=265697", time: "2025.04.22 14:17" },
+                { title: "통신사 보안 시스템 재검토 필수", media: "이코리아", url: "https://www.ekoreanews.co.kr/news/articleView.html?idxno=79068", time: "2025.04.22 17:23" },
+                { title: "SKT 사고로 통신 인프라 보안 경각심", media: "이코노텔링", url: "http://www.econotelling.com/news/articleView.html?idxno=16629", time: "2025.04.22 18:22" }
+            ],
+            "정부 현장조사": [
+                { title: "SK텔레콤 개인식별 칩 유심 개인정보 유출 통신당국 조사 착수", media: "국제신문", url: "http://www.kookje.co.kr/news2011/asp/newsbody.asp?code=0200&key=20250422.99099007276", time: "2025.04.22 19:45" },
+                { title: "과기정통부 SKT 본사 현장조사", media: "연합뉴스", url: "https://www.yna.co.kr/view/PYH20250422088000013?input=1196m", time: "2025.04.22 12:07" },
+                { title: "정부 SKT 해킹 사고에 비상대책반 구성", media: "헤럴드경제", url: "https://biz.heraldcorp.com/article/10470858?ref=naver", time: "2025.04.22 10:32" },
+                { title: "과기부 SKT 현장조사 진행 중", media: "연합뉴스", url: "https://www.yna.co.kr/view/PYH20250422088000013?input=1196m", time: "2025.04.22 12:07" },
+                { title: "SKT 해킹 정부 전방위 조사", media: "뷰스앤뉴스", url: "http://www.viewsnnews.com/article?q=226641", time: "2025.04.22 17:10" },
+                { title: "당국 SKT 보안 취약점 전수조사", media: "아시아투데이", url: "https://www.asiatoday.co.kr/view.php?key=20250422010012693", time: "2025.04.22 09:28" },
+                { title: "정부 SKT 해킹 원인 규명 착수", media: "컨슈머타임스", url: "https://www.cstimes.com/news/articleView.html?idxno=643623", time: "2025.04.22 16:08" },
+                { title: "과기부 SKT 검토", media: "연합뉴스", url: "https://www.yna.co.kr/view/PYH20250422088000013?input=1196m", time: "2025.04.22 12:07" },
+                { title: "SKT 해킹 정부 대응 총력", media: "한국정경신문", url: "http://kpenews.com/View.aspx?No=3622690", time: "2025.04.22 14:57" },
+                { title: "정부 SKT 대상 특별조사 실시", media: "연합뉴스", url: "https://www.yna.co.kr/view/PYH20250422088000013?input=1196m", time: "2025.04.22 12:07" },
+                { title: "과기부 SKT 해킹 엄중 대응", media: "헤럴드경제", url: "https://biz.heraldcorp.com/article/10470858?ref=naver", time: "2025.04.22 10:32" },
+                { title: "당국 SKT 책임 추궁 방침", media: "국방일보", url: "https://kookbang.dema.mil.kr/newsWeb/20250423/3/ATCE_CTGR_0030010000/view.do", time: "" }
+            ],
+            "과기정통부 대응": [
+                { title: "과기정통부 SKT 개인정보 침해사고 비상대책반 구성", media: "조선비즈", url: "https://biz.chosun.com/it-science/ict/2025/04/22/Q35KYPZQ4ZDZVMAXPJNU5N4RDU/?utm_source=naver&utm_medium=original&utm_campaign=biz", time: "2025.04.22 01:41" },
+                { title: "과기정통부 SKT해킹 신속조사 추진 구성", media: "머니투데이", url: "http://news.mt.co.kr/mtview.php?no=2025042210375576627", time: "2025.04.22 11:01" },
+                { title: "정부 SKT 해킹 사고에 긴급 대응 비상대책반 가동", media: "헤럴드경제", url: "https://biz.heraldcorp.com/article/10470858?ref=naver", time: "2025.04.22 10:32" },
+                { title: "과기부 SKT 해킹 철저 조사", media: "포인트데일리", url: "https://www.pointdaily.co.kr/news/articleView.html?idxno=243820", time: "2025.04.22 10:55" },
+                { title: "과기정통부 비상대책반 SKT 사고 대응", media: "보안뉴스", url: "http://www.boannews.com/media/view.asp?idx=136955&kind=", time: "2025.04.22 11:01" },
+                { title: "정부 SKT 보안 관리 문제 검토", media: "파이낸셜뉴스", url: "http://www.fnnews.com/news/202504221806593031", time: "2025.04.22 18:07" },
+                { title: "해킹 원인 파악 나서", media: "딜사이트경제TV", url: "https://news.dealsitetv.com/articles/153662", time: "2025.04.22 13:58" },
+                { title: "과기정통부 SKT 사고 엄중 대처", media: "헤럴드경제", url: "https://biz.heraldcorp.com/article/10470858?ref=naver", time: "2025.04.22 10:32" },
+                { title: "정부 비상대책반 SKT 피해 최소화", media: "보안뉴스", url: "http://www.boannews.com/media/view.asp?idx=136955&kind=", time: "2025.04.22 11:01" },
+                { title: "과기부 SKT 보안 점검 착수", media: "컨슈머타임스", url: "https://www.cstimes.com/news/articleView.html?idxno=643623", time: "2025.04.22 16:08" },
+                { title: "정부 SKT 해킹 대응 총력", media: "헤럴드경제", url: "https://biz.heraldcorp.com/article/10470858?ref=naver", time: "2025.04.22 10:32" },
+                { title: "과기정통부 긴급 회의 SK", media: "연합뉴스", url: "https://www.yna.co.kr/view/PYH20250422088000013?input=1196m", time: "2025.04.22 12:07" },
+                { title: "정부 SKT 해킹에 신속 대응 체계", media: "머니투데이", url: "http://news.mt.co.kr/mtview.php?no=2025042210375576627", time: "2025.04.22 11:01" },
+                { title: "과기부 SKT 사고 전방위 조사", media: "연합뉴스", url: "https://www.yna.co.kr/view/PYH20250422088000013?input=1196m", time: "2025.04.22 12:07" },
+                { title: "과기정통부 SKT 비상대책반 가동", media: "헤럴드경제", url: "https://biz.heraldcorp.com/article/10470858?ref=naver", time: "2025.04.22 10:32" }
+            ],
+            "영상뉴스 헤드라인": [
+                { title: "SKT도해킹당했다 정부 사고경위 조사", media: "뷰스앤뉴스", url: "http://www.viewsnnews.com/article?q=226641", time: "2025.04.22 17:10:15" },
+                { title: "뉴스1번지 SKT 해킹 사고 긴급 점검", media: "제민일보", url: "https://www.jemin.com/news/articleView.html?idxno=796729", time: "2025.04.22 13:06" },
+                { title: "헤드라인 국내 최대 통신사 SKT 해킹", media: "YTN", url: "https://www.ytn.co.kr/_ln/0102_202504222239360665", time: "2025.04.22 22:39" },
+                { title: "속보 SKT 개인정보 유출 사태", media: "이코노텔링", url: "http://www.econotelling.com/news/articleView.html?idxno=16629", time: "2025.04.22 18:22" },
+                { title: "영상뉴스 SKT 해킹 피해 확산", media: "한국경제TV", url: "http://www.wowtv.co.kr/NewsCenter/News/Read?articleId=A202504220346&t=NN", time: "2025.04.22 10:45" },
+                { title: "뉴스특보 SKT 유심정보 유출", media: "경향신문", url: "https://www.khan.co.kr/article/202504222054005", time: "2025.04.22 20:54" }
+            ]
+        };
+
+        const grid = document.getElementById('clusterGrid');
+        clusterData.clusters.forEach(cluster => {
+            const card = document.createElement('div');
+            card.className = 'cluster-card';
+            card.style.borderLeftColor = cluster.color;
+            card.innerHTML = `
+                <div class="cluster-header">
+                    <div class="cluster-name" style="color: ${cluster.color};">${cluster.name}</div>
+                    <div class="cluster-size" style="background: ${cluster.color};">${cluster.size}개</div>
+                </div>
+                <div class="keywords">
+                    ${cluster.keywords.map(kw => `<span class="keyword-tag" style="background: ${cluster.color};">${kw}</span>`).join('')}
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+
+        const accordionContainer = document.getElementById('accordionContainer');
+        clusterData.clusters.forEach(cluster => {
+            const news = newsData[cluster.name];
+            if (!news || news.length === 0) return;
+            
+            const accordionItem = document.createElement('div');
+            accordionItem.className = 'accordion-item';
+            accordionItem.style.borderLeft = `4px solid ${cluster.color}`;
+            
+            const header = document.createElement('div');
+            header.className = 'accordion-header';
+            header.innerHTML = `
+                <div class="accordion-label" style="color: ${cluster.color};">
+                    ${cluster.name} (${cluster.size}개)
+                </div>
+                <div class="accordion-time">
+                    ${cluster.timeline}
+                </div>
+                <div class="accordion-icon">▼</div>
+            `;
+            
+            const content = document.createElement('div');
+            content.className = 'accordion-content';
+            
+            const newsList = document.createElement('div');
+            newsList.className = 'news-list';
+            
+            news.forEach(item => {
+                const newsItem = document.createElement('div');
+                newsItem.className = 'news-item';
+                newsItem.style.borderLeftColor = cluster.color;
+                newsItem.innerHTML = `
+                    <div class="news-title">
+                        <a href="${item.url}" target="_blank">${item.title}</a>
+                    </div>
+                    <div class="news-meta">
+                        <span class="news-media">${item.media}</span>
+                        <span>${item.time}</span>
+                    </div>
+                `;
+                newsList.appendChild(newsItem);
+            });
+            
+            content.appendChild(newsList);
+            accordionItem.appendChild(header);
+            accordionItem.appendChild(content);
+            accordionContainer.appendChild(accordionItem);
+            
+            header.addEventListener('click', () => {
+                const icon = header.querySelector('.accordion-icon');
+                const isActive = content.classList.contains('active');
+                
+                document.querySelectorAll('.accordion-content').forEach(c => c.classList.remove('active'));
+                document.querySelectorAll('.accordion-icon').forEach(i => i.classList.remove('active'));
+                
+                if (!isActive) {
+                    content.classList.add('active');
+                    icon.classList.add('active');
+                }
+            });
+        });
+
+        const ctx1 = document.getElementById('clusterSizeChart').getContext('2d');
+        new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: clusterData.clusters.map(c => c.name),
+                datasets: [{
+                    label: '뉴스 기사 수',
+                    data: clusterData.clusters.map(c => c.size),
+                    backgroundColor: clusterData.clusters.map(c => c.color),
+                    borderRadius: 8,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        padding: 12,
+                        titleFont: { size: 14 },
+                        bodyFont: { size: 13 }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                        ticks: { font: { size: 12 } }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 11 } }
+                    }
+                }
+            }
+        });
+
+        const ctx2 = document.getElementById('timelineChart').getContext('2d');
+        new Chart(ctx2, {
+            type: 'line',
+            data: {
+                labels: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '24:00'],
+                datasets: [
+                    {
+                        label: '유심정보 유출 사고 (139개)',
+                        data: [0, 0, 0, 35, 75, 105, 125, 135, 139],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4, fill: true, borderWidth: 3
+                    },
+                    {
+                        label: '대규모 해킹 사고 (81개)',
+                        data: [5, 15, 25, 40, 55, 65, 75, 80, 81],
+                        borderColor: '#f093fb',
+                        backgroundColor: 'rgba(240, 147, 251, 0.1)',
+                        tension: 0.4, fill: true, borderWidth: 3
+                    },
+                    {
+                        label: '보안 취약점 분석 (46개)',
+                        data: [3, 8, 12, 18, 28, 35, 40, 44, 46],
+                        borderColor: '#4facfe',
+                        backgroundColor: 'rgba(79, 172, 254, 0.1)',
+                        tension: 0.4, fill: true, borderWidth: 3
+                    },
+                    {
+                        label: '정부 현장조사 (39개)',
+                        data: [2, 5, 10, 18, 25, 30, 35, 38, 39],
+                        borderColor: '#43e97b',
+                        backgroundColor: 'rgba(67, 233, 123, 0.1)',
+                        tension: 0.4, fill: true, borderWidth: 3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { usePointStyle: true, padding: 15, font: { size: 12 } }
+                    },
+                    tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', padding: 12 }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: '누적 기사 수', font: { size: 13 } },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    },
+                    x: {
+                        title: { display: true, text: '시간 (4월 22일)', font: { size: 13 } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
